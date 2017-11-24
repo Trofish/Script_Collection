@@ -1,0 +1,41 @@
+#!/usr/bin/env python
+#coding=utf-8
+
+import argparse
+import commands
+import time
+
+arg = argparse.ArgumentParser()
+arg.add_argument("a1", type = str)
+arg.add_argument("a2", type = str)
+arg.add_argument("a3", type = str)
+arg.add_argument("a4", type = str)
+arg.add_argument("a5", type = str)
+smoke = arg.parse_args()
+
+a1 = smoke.a1
+a2 = smoke.a2
+a3 = smoke.a3
+a4 = smoke.a4
+a5 = smoke.a5
+
+Smoke_alert = time.strftime("%Y-%m-%d %H:%M:%S") + " " + a1 + " " + a2 + " " + a3 + " " +a4 + " " + a5
+print Smoke_alert
+
+#告警写入本地文件
+with open('/opt/smokeping/alert_log.txt','a+') as file:
+    file.write(Smoke_alert + '\n')
+
+AgentId = 1000002
+Secret = 'mc3M5tEGEzaL3_u_do_not_know_ahe33l120'
+CorpID = 'youdontknow1464edc9'
+
+Get_token = commands.getoutput("curl -s -G 'https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=%s&corpsecret=%s'"%(CorpID, Secret))
+#反斜线对引号进行转义
+Access_token = Get_token.split(',')[2].split(':')[1].strip("\"")
+
+#木办法，只能使用大量的反斜线\对命令行中的引号,花括号进行转义...
+Wechat_send = "curl -d \'{ \"touser\" : \"@all\", \"toparty\" : \"\", \"totag\" : \"\", \"msgtype\" : \"text\", \"agentid\" : %i, \"text\" : { \"content\" : \"%s\" }, \"safe\":0}\' \'https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=%s\'"%(AgentId, Smoke_alert, Access_token)
+
+smoke_send = commands.getoutput(Wechat_send)
+
