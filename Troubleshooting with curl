@@ -1,0 +1,28 @@
+#!/usr/bin/env python
+#coding=utf-8
+
+import commands
+import time
+
+l = []
+
+file_name=time.strftime('%m%d_%H%M')
+f = open('/tmp/curl_%s.txt'%(file_name),'w+')
+
+
+f.write('Start Time: %s \n'%(time.strftime('%Y-%m-%d-%H:%M:%S')))
+
+for i in range(200):
+    a, b  = commands.getstatusoutput('curl -o /dev/null -s -w %{time_total}"\n" http://cmsapi.wifi8.com/v2/adNew/config')
+    l.append(float(b))
+    f.write('%s, %s\n'%(time.strftime('%H:%M:%S'), b))
+    time.sleep(10)
+
+f.write('Total 200 times CURL, finish time is: %s\n'%(time.strftime('%Y-%m-%d-%H:%M:%S')))
+
+mx = max(l)
+avg = sum(l)/200
+f.write('The Max response time is %s \n'%(mx))
+f.write('The Average response time is %s \n'%(avg))
+
+f.close()
