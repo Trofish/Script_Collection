@@ -1,0 +1,239 @@
+#!/usr/bin/env python
+#coding=utf-8
+
+
+"""
+Collecting configuration with a jumpserver. 
+Yong Peng 2017-09-05
+
+想利用Threading实现并发，但是失败了。怀疑在多个线程下 con.expect(  ) 为同一id，需要额外对con.expect 或 send 实现线程安全，因为总是报timeout，匹配不到字串。
+为了防止多进程在读取设备列表时重复复制相同数据，又舍近求远用multiprocessing.Manager()折腾很久失败，没明白Manager().Queue()为什么会不成功。
+
+"""
+
+
+import time
+import pexpect
+import os
+import sys
+import multiprocessing
+#import getpass
+
+
+__version__ = '3.0'
+
+
+#time = time.strftime('%y.%m.%d-%H:%M:%S')
+Dir_name = time.strftime('%Y%m%d')
+
+
+if not os.path.lexists('/config_bak/{}'.format(Dir_name)):
+    os.system('mkdir /config_bak/{}'.format(Dir_name))
+
+
+#登录堡垒机的帐号
+#Password = getpass.getpass('Pls input password: ')
+Username = 'usernameXX'
+Pwd = 'passXX'
+
+
+#登录设备的帐号
+Login_user = 'usernameYY'
+Login_pwd = 'passYY'
+Enable_pwd = 'enableYY'
+
+
+
+
+command_set1 = ['show run\n', 'show vlan\n', 'show interface status\n']
+command_set2 = ['show run\n', 'show ap-config summ\n', 'show ap-config run\n']
+command_set3 = ['dis curr \n', 'dis interface brief\n']
+
+
+#堡垒机登录
+def Login(IP):
+    global con
+    con = pexpect.spawn('/usr/bin/ssh {}@8.8.8.8 -p 8822'.format(Username),maxread=2000000, logfile=None,encoding=None)
+    Counter1 = 0
+    while True:
+        #防止因认证错误，堡垒机登录无限循环尝试
+        result = con.expect(['.*Password: ', '.*Select group: ', '.*Select page: ', '.*Select server: '])
+        if result == 0:
+            con.send(Pwd + '\n')
+            Counter1 += 1
+        
+            if Counter1 <3:
+                continue
+            else:
+                print "Jumpserver authentication failure"
+                sys.exit(1)
+        
+        #已登录堡垒机,在堡垒机提示选择组时.输入选择0,否则无法根据IP跳转资源        
+        elif result == 1:
+            con.send('0\n')
+            continue
+        
+        #跳转到可根据IP跳转资源的界面    
+        elif result == 2 or 3: 
+            break   
+#网络设备登录 
+    Counter2 = 0
+    while True:
+        #开始跳转到要进行配置备份的设备
+        con.send(IP + '\n')
+        time.sleep(1)
+        result = con.expect(['.*Select group: $', '.*Select page: $', '.*Select server: $', '.*Input account: $'])
+        if result == 3: 
+            con.send(Login_user + '\n')
+            time.sleep(1)
+            con.expect('.*password: ')
+            time.sleep(1)
+            con.send(Login_pwd + '\n')
+            time.sleep(1)
+            break
+            
+        else:     
+            Counter2 += 1
+            
+            if Counter2 < 3:
+                continue
+            
+            else:
+                print 'There is no such a device'
+#               sys.exit(11)
+                break
+                                
+#锐捷交换机
+def Device_type1(bak_file):
+    con.expect('.*>$')
+    con.send('enable\n')
+    time.sleep(1)
+    con.expect('Password:')
+    time.sleep(1)
+    con.send(Enable_pwd + '\n')
+    time.sleep(1)
+    con.expect('.*#$')
+    con.send('\n')
+    time.sleep(1)
+    con.expect('.*#$')
+#定义写入文件
+    con.logfile = bak_file
+#进行备份配置
+    for i in command_set1:
+        con.send(i)
+        while True:
+            result = con.expect([' --More-- $', '.*#$'])
+            if result == 0:
+                time.sleep(0.3)
+                con.send(' ')
+                continue
+       
+            else:
+                con.send('\n')
+                con.expect('.*#$')
+                break
+  
+    bak_file.close()
+    con.close()  
+
+
+    
+#锐捷AC(与Device_type1一模一样，除了command_set以外）
+def Device_type2(bak_file):
+    con.expect('.*>$')
+    con.send('enable\n')
+    con.expect('Password:')
+    con.send(Enable_pwd + '\n')
+    con.expect('.*#$')
+    con.send('\n')
+    con.expect('.*#$')
+#定义写入文件
+    con.logfile = bak_file
+#进行备份配置
+    for i in command_set2:
+        con.send(i)
+        while True:
+            result = con.expect(['.*--More-- $', '.*#$'])
+            if result == 0:
+                time.sleep(0.1)
+                con.send(' ')
+                continue
+       
+            else:
+                con.send('\n')
+                con.expect('.*#$')
+                break
+  
+    bak_file.close()
+    con.close()    
+
+
+
+
+#H3C防火墙
+def Device_type3(bak_file):
+    con.expect('.*>')
+    con.send('\n')
+    con.expect('.*>')
+#定义写入文件
+    con.logfile = bak_file
+#进行备份配置
+    for i in command_set3:
+        con.send(i)
+        while True:
+            result = con.expect(['---- More ----', '.*>'])
+            if result == 0:
+                time.sleep(0.3)
+                con.send(' ')
+                continue
+       
+            else:
+                con.send('\n')
+                con.expect('.*]')
+                break
+  
+    bak_file.close()
+    con.close()
+
+
+
+
+#定义线程执行的函数
+def bak():
+    while not q.empty():
+        i3 = q.get()
+        IP = i3.split(',')[0]
+        Device_name = i3.split(',')[1]
+        bak_file = open('/config_bak/{}/{}.txt'.format(Dir_name, Device_name), 'w')
+        
+#        try:
+        Login(IP)
+            
+        if i3.split(',')[2].strip() == 'switch' :
+            Device_type1(bak_file)
+            
+        elif i3.split(',')[2].strip() == 'AC' :
+            Device_type2(bak_file)
+                
+        elif i3.split(',')[2].strip() == 'H3C' :
+            Device_type3(bak_file)
+    
+#        except Exception:
+#            print 'Script Error'
+
+
+
+
+q = multiprocessing.Queue()
+
+
+with open('/config_bak/device_list.txt','r') as List:
+    for i in List.readlines():
+        q.put(i)
+    
+
+
+    
+for i in range(5):
+    r = multiprocessing.Process(target=bak)
+    r.start()
