@@ -1,0 +1,64 @@
+#!/root/anaconda3/bin/python3
+import time
+import os
+import random
+import threading
+from selenium import webdriver
+
+def time_5s():
+    time.sleep(5)
+    try:
+        if l[0] is True:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S")+"\t"+"Success"+"\n")
+        elif l[0] is False:
+            f.write(time.strftime("%Y-%m-%d %H:%M:%S")+"\t"+"FAILURE_no_data"+"\n")
+ 
+    except:
+        f.write(time.strftime("%Y-%m-%d %H:%M:%S") + "\t" + "FAILURE" + "\n")
+
+def portal_test():
+    ran1 = str(random.randint(1,254))
+    ran2 = str(random.randint(1,254))
+    ran3 = str(random.randint(1,999999))
+    driver = webdriver.Chrome("/usr/bin/chromedriver")
+    url = "http://1.2." + ran1 + "." + ran2 + "/" + ran3 + ".html"
+    print(url)
+    driver.get(url)
+    
+    #"set_page_load_timeout" doesn't work..., that's why creat a thread for timing.
+    #driver.set_page_load_timeout(10)
+    #driver.set_script_timeout(10)
+    #driver.delete_all_cookies()
+
+    try:
+        a = driver.find_element_by_class_name("known-btn")
+        l.append(True)
+
+    except:
+        l.append(False)
+    driver.close()
+
+if __name__ == "__main__":
+
+    os.popen("killall chrome")
+    print("Begin,", time.strftime("%H:%M:%S"))
+
+    with open('/test/%s'%(time.strftime("%Y_%m_%d_%H%M")),'a+') as f:
+
+        while True:
+            l = []
+            t1 = threading.Thread(target=portal_test)
+            t1.setDaemon(True)
+            t1.start()
+
+            t2 = threading.Thread(target=time_5s)
+            t2.start()
+            
+            #"t1.join()" will cause setDaemon() invalid.
+            # t1.join()
+            t2.join()
+
+            os.popen("killall chrome")
+            print("End," ,time.strftime("%H:%M:%S"))
+            print(l)
+            time.sleep(55)
